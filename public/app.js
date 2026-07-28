@@ -83,7 +83,9 @@
       });
       const out = await api('POST', '/api/push/subscribe', sub.toJSON());
       if (!out.ok) throw new Error(out.error);
-      toast('Reminders on');
+      toast('Reminders on — sending a test…');
+      // Immediate proof the whole pipeline works, while the phone is in hand.
+      api('POST', '/api/push/test').catch(() => {});
       return true;
     } catch (err) {
       toast(`Couldn't enable reminders: ${err.message}`, true);
