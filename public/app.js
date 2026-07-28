@@ -367,7 +367,7 @@
       <div id="form"></div>
     `);
 
-    let selected = null; // {id, common_name, thumbnail} | null
+    let selected = null; // {id, common_name, thumbnail, water_days?} | null
     const qInput = frag.querySelector('#q');
     const results = frag.querySelector('#results');
     const form = frag.querySelector('#form');
@@ -383,7 +383,7 @@
         <div class="row">
           <div>
             <label>Water every (days)</label>
-            <input id="wdays" type="number" min="1" inputmode="numeric" placeholder="${selected ? 'from species' : '7'}" />
+            <input id="wdays" type="number" min="1" inputmode="numeric" value="${selected?.water_days ?? ''}" placeholder="7" />
           </div>
           <div>
             <label>Feed every (days)</label>
@@ -446,11 +446,18 @@
               </div>
             </div>
           `);
-          row.querySelector('.card').onclick = () => {
+          row.querySelector('.card').onclick = async () => {
             selected = r;
             results.replaceChildren();
             qInput.value = '';
+            // Pull details so the watering interval can prefill. Not all
+            // species have data — fall back honestly rather than guessing.
+            const detail = await api('GET', `/api/species/${r.id}`).catch(() => null);
+            selected.water_days = detail?.species?.water_days ?? null;
             showForm();
+            if (selected.water_days == null) {
+              toast('No watering data for this species — set your own interval.');
+            }
             form.querySelector('#nick').focus();
           };
           results.append(row);

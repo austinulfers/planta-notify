@@ -34,6 +34,11 @@ test('benchmarkToDays handles junk strings', () => {
   assert.equal(benchmarkToDays({ value: 'often' }), null);
 });
 
+test('benchmarkToDays handles embedded quotes (real API shape)', () => {
+  // Perenual actually returns e.g. '"7-10"' for weeping fig.
+  assert.equal(benchmarkToDays({ value: '"7-10"', unit: 'days' }), 9);
+});
+
 test('benchmarkToDays never returns less than 1', () => {
   assert.equal(benchmarkToDays({ value: '0' }), 1);
 });

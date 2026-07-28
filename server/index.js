@@ -262,6 +262,22 @@ async function handleApi(req, res, url) {
     return json(res, 200, { ok: true, ...out });
   }
 
+  const speciesMatch = url.pathname.match(/^\/api\/species\/(\d+)$/);
+  if (speciesMatch && req.method === 'GET') {
+    // Fetched when a species is selected in the Add flow, so the watering
+    // interval can prefill. Also warms species_cache ahead of plant creation.
+    const species = await getSpeciesDetails(Number(speciesMatch[1]));
+    if (!species) return json(res, 200, { ok: true, species: null });
+    return json(res, 200, {
+      ok: true,
+      species: {
+        perenual_id: species.perenual_id,
+        common_name: species.common_name,
+        water_days: species.water_days,
+      },
+    });
+  }
+
   if (route === 'POST /api/push/subscribe') {
     const body = await readBody(req);
     if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth)
