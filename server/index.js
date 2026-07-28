@@ -94,8 +94,9 @@ async function handleApi(req, res, url) {
   // Public routes.
   if (route === 'POST /api/auth/request') {
     const body = await readBody(req);
-    requestLoginCode(body.email);
-    // Same response either way — do not leak which emails exist.
+    // Fire-and-forget: responding before the email send completes keeps the
+    // response time constant whether or not the account exists.
+    requestLoginCode(body.email).catch((err) => console.error('[auth]', err));
     return json(res, 200, { ok: true, message: 'If that account exists, a code was issued.' });
   }
 

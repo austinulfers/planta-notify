@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db, now } from './db.js';
+import { sendLoginCode } from './email.js';
 
 // Auth = 6-digit login code, typed inside the app. This avoids the iOS
 // gotcha where cookies set in Safari do NOT carry into the installed PWA
@@ -23,7 +24,7 @@ const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const hmac = (s) =>
   crypto.createHmac('sha256', SECRET).update(s).digest('base64url');
 
-export function requestLoginCode(email) {
+export async function requestLoginCode(email) {
   const user = db
     .prepare('SELECT id, email FROM users WHERE email = ?')
     .get(String(email || '').trim().toLowerCase());
@@ -34,8 +35,13 @@ export function requestLoginCode(email) {
   db.prepare('UPDATE users SET login_token = ?, token_expires = ? WHERE id = ?')
     .run(sha256(code), now() + CODE_TTL, user.id);
 
-  // v1 delivery channel: the server log.
-  console.log(`[auth] login code for ${user.email}: ${code} (valid 15 min)`);
+  const emailed = await sendLoginCode(user.email, code);
+  if (emailed) {
+    console.log(`[auth] login code emailed to ${user.email}`);
+  } else {
+    // No email configured (dev) or send failed — the journal is the fallback.
+    console.log(`[auth] login code for ${user.email}: ${code} (valid 15 min)`);
+  }
 }
 
 export function verifyLoginCode(email, code) {

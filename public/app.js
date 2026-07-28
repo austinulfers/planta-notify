@@ -133,7 +133,7 @@
       await api('POST', '/api/auth/request', { email: email.value });
       app.querySelector('#codeStep').hidden = false;
       app.querySelector('#code').focus();
-      toast('Code sent — check with Austin');
+      toast('Code sent — check your email');
     };
     app.querySelector('#verify').onclick = async () => {
       const out = await api('POST', '/api/auth/verify', {
