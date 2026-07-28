@@ -368,6 +368,7 @@
     `);
 
     let selected = null; // {id, common_name, thumbnail} | null
+    const qInput = frag.querySelector('#q');
     const results = frag.querySelector('#results');
     const form = frag.querySelector('#form');
 
@@ -421,7 +422,7 @@
     showForm();
 
     let debounce;
-    frag.querySelector('#q').oninput = (e) => {
+    qInput.oninput = (e) => {
       clearTimeout(debounce);
       const q = e.target.value.trim();
       if (q.length < 3) {
@@ -448,7 +449,7 @@
           row.querySelector('.card').onclick = () => {
             selected = r;
             results.replaceChildren();
-            frag.querySelector('#q').value = '';
+            qInput.value = '';
             showForm();
             form.querySelector('#nick').focus();
           };

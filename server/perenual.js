@@ -9,6 +9,12 @@ const API = 'https://perenual.com/api/v2';
 const KEY = process.env.PERENUAL_API_KEY;
 const SEARCH_TTL = 30 * 24 * 3600;
 
+// The free tier returns a paywall placeholder image for many species; a
+// broken/locked thumbnail is worse than none.
+function usableThumb(url) {
+  return url && !url.includes('upgrade_access') ? url : null;
+}
+
 export async function searchSpecies(q) {
   const query = q.trim().toLowerCase();
   if (query.length < 3) return { results: [], cached: true };
@@ -41,7 +47,7 @@ export async function searchSpecies(q) {
     scientific_name: Array.isArray(s.scientific_name)
       ? s.scientific_name[0]
       : s.scientific_name,
-    thumbnail: s.default_image?.thumbnail || null,
+    thumbnail: usableThumb(s.default_image?.thumbnail),
   }));
 
   db.prepare(
@@ -85,7 +91,7 @@ export async function getSpeciesDetails(perenualId) {
     s.id,
     s.common_name || null,
     Array.isArray(s.scientific_name) ? s.scientific_name[0] : s.scientific_name || null,
-    s.default_image?.thumbnail || null,
+    usableThumb(s.default_image?.thumbnail),
     waterDays,
     JSON.stringify(s),
     now()
