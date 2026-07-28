@@ -390,6 +390,8 @@
             <input id="fdays" type="number" min="1" inputmode="numeric" value="28" />
           </div>
         </div>
+        <label>Last watered (optional — leave blank for today)</label>
+        <input id="lastw" type="date" max="${new Date().toISOString().slice(0, 10)}" />
         <button class="primary bigbtn" id="create">Add plant</button>
       `)
       );
@@ -409,6 +411,11 @@
         if (wdays) body.water_interval_days = Number(wdays);
         const fdays = form.querySelector('#fdays').value;
         body.fertilize_interval_days = fdays === '' ? null : Number(fdays);
+        const lastw = form.querySelector('#lastw').value;
+        if (lastw) {
+          // Local midday, so the date stays right regardless of timezone.
+          body.last_watered = Math.floor(new Date(`${lastw}T12:00:00`).getTime() / 1000);
+        }
         const out = await api('POST', '/api/plants', body);
         if (!out.ok) return toast(out.error, true);
         if (body.perenual_id && !out.species_found) {

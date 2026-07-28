@@ -151,8 +151,15 @@ async function handleApi(req, res, url) {
         : Number(body.fertilize_interval_days) || 28;
 
     // Fresh plants start their clocks now — a new plant should not instantly
-    // appear overdue.
+    // appear overdue — unless the caller says when it was actually last watered.
     const ts = now();
+    let lastWatered = ts;
+    if (body.last_watered != null) {
+      const v = Number(body.last_watered);
+      if (!Number.isInteger(v) || v > ts || v < ts - 5 * 365 * 86400)
+        return json(res, 400, { ok: false, error: 'Last watered date must be in the past.' });
+      lastWatered = v;
+    }
     const info = db
       .prepare(
         `INSERT INTO plants
@@ -167,10 +174,16 @@ async function handleApi(req, res, url) {
         body.location ? String(body.location).trim() : null,
         waterDays,
         fertDays,
-        ts,
+        lastWatered,
         ts,
         ts
       );
+    // Keep the event log truthful: a backdated last_watered is a real watering.
+    if (lastWatered !== ts) {
+      db.prepare(
+        'INSERT INTO care_events (plant_id, kind, occurred_at, note) VALUES (?, ?, ?, ?)'
+      ).run(info.lastInsertRowid, 'water', lastWatered, 'added with backdated watering');
+    }
     const plant = db.prepare('SELECT * FROM plants WHERE id = ?').get(info.lastInsertRowid);
     return json(res, 201, { ok: true, plant: plantWithDue(plant), species_found: !!species });
   }
@@ -288,8 +301,8 @@ async function handleApi(req, res, url) {
 
   if (route === 'POST /api/push/test') {
     const result = await pushToUser(user.id, {
-      title: 'Plant Care test',
-      body: 'Push works. This is what a reminder will look like.',
+      title: 'Plant Care',
+      body: 'Notification works. This is what a reminder will look like.',
       url: '/',
     });
     return json(res, 200, { ok: true, ...result });

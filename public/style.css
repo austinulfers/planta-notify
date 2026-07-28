@@ -95,6 +95,11 @@ input, select {
   background: var(--card);
   color: var(--text);
   margin: 6px 0 14px;
+  color-scheme: dark; /* native date picker matches the theme */
+}
+input[type="date"] {
+  -webkit-appearance: none;
+  min-height: 47px; /* iOS collapses empty date inputs */
 }
 input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 label { color: var(--muted); font-size: 0.9rem; }
