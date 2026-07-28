@@ -200,7 +200,45 @@ if [[ $state != active ]]; then
 fi
 echo "$APP is active"
 
-log "Installing nightly database backup (03:17, 14-day rotation)"
+log "Installing nightly database backup (03:17, 14-day local rotation + git push)"
+# Two tiers:
+#   1. Dated local copies in $DATA_DIR/backups (fast restore, survives GitHub outage)
+#   2. A private git repo (offsite, versioned): plants.db committed nightly;
+#      git history is the retention policy. Pushed with a deploy key that can
+#      write ONLY the backups repo — never code.
+BACKUP_REPO=${BACKUP_REPO:-git@github.com:austinulfers/planta-notify-backups.git}
+BACKUP_KEY=$DATA_DIR/backup-ssh-key
+
+if [[ -n ${BACKUP_PUSH_KEY:-} ]]; then
+  printf '%s\n' "$BACKUP_PUSH_KEY" >"$BACKUP_KEY"
+  chown "$APP:$APP" "$BACKUP_KEY"
+  chmod 600 "$BACKUP_KEY"
+fi
+
+cat >"$DATA_DIR/run-backup.sh" <<EOF
+#!/bin/sh
+# Nightly backup. Local dated copy + push latest to the private backups repo.
+set -e
+sqlite3 $DATA_DIR/plants.db ".backup $DATA_DIR/backups/plants-\$(date +%F).db"
+find $DATA_DIR/backups -name "plants-*.db" -mtime +14 -delete
+
+[ -f $BACKUP_KEY ] || { echo "no backup push key; local backup only"; exit 0; }
+export GIT_SSH_COMMAND="ssh -i $BACKUP_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$DATA_DIR/known_hosts"
+REPO_DIR=$DATA_DIR/backup-repo
+if [ ! -d "\$REPO_DIR/.git" ]; then
+  git clone --quiet $BACKUP_REPO "\$REPO_DIR" || { git init -q -b main "\$REPO_DIR"; git -C "\$REPO_DIR" remote add origin $BACKUP_REPO; }
+fi
+cp "$DATA_DIR/backups/plants-\$(date +%F).db" "\$REPO_DIR/plants.db"
+cd "\$REPO_DIR"
+git config user.name "planta-notify backup"
+git config user.email "noreply@auth.offhourslab.com"
+git add plants.db
+git diff --cached --quiet || git commit -q -m "backup \$(date -u +%FT%TZ)"
+git push -q origin main
+EOF
+chown "$APP:$APP" "$DATA_DIR/run-backup.sh"
+chmod 750 "$DATA_DIR/run-backup.sh"
+
 cat >"/etc/systemd/system/$APP-backup.service" <<EOF
 [Unit]
 Description=planta-notify SQLite backup
@@ -209,9 +247,9 @@ Description=planta-notify SQLite backup
 Type=oneshot
 User=$APP
 Group=$APP
-# .backup is transactionally safe against a live WAL database.
-ExecStart=/bin/sh -c 'sqlite3 $DATA_DIR/plants.db ".backup $DATA_DIR/backups/plants-\$(date +%%F).db"'
-ExecStartPost=/bin/sh -c 'find $DATA_DIR/backups -name "plants-*.db" -mtime +14 -delete'
+# The service account has no home; git wants one for config lookups.
+Environment=HOME=$DATA_DIR
+ExecStart=$DATA_DIR/run-backup.sh
 EOF
 cat >"/etc/systemd/system/$APP-backup.timer" <<EOF
 [Unit]
