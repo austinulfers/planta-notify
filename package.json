@@ -1,0 +1,19 @@
+{
+  "name": "planta-notify",
+  "version": "1.0.0",
+  "description": "Self-hosted plant watering/fertilizing reminder PWA with iOS web push",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --env-file=.env --watch server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "web-push": "^3.6.7"
+  }
+}

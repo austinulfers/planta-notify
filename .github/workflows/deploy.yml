@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/planta-notify
+            git fetch --all
+            git reset --hard origin/main
+            npm install --omit=dev --no-audit --no-fund
+            # deploy-planta-notify owns the checkout; the planta-notify service
+            # account only reads it via the group. Restart is the one privileged
+            # action, and sudoers scopes it to this unit alone (see
+            # deploy/setup-planta-notify.sh).
+            sudo systemctl restart planta-notify
+            sudo systemctl is-active planta-notify

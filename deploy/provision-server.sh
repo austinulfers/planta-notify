@@ -122,7 +122,8 @@
 #      applied, and the deploy user CANNOT restart nginx.
 #
 #   Port registry (keep this current):
-#     3000  megahex   megahex.offhourslab.com
+#     3000  megahex        megahex.offhourslab.com
+#     3001  planta-notify  plants.offhourslab.com
 #
 # ---------------------------------------------------------------------------
 #  DISASTER RECOVERY (server wiped)
