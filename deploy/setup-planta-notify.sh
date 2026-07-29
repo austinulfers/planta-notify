@@ -89,6 +89,7 @@ log "Preparing data dir $DATA_DIR"
 # path the app may write (enforced by ReadWritePaths in the unit).
 install -d -m 750 -o "$APP" -g "$APP" "$DATA_DIR"
 install -d -m 750 -o "$APP" -g "$APP" "$DATA_DIR/backups"
+install -d -m 750 -o "$APP" -g "$APP" "$DATA_DIR/uploads"
 
 log "Writing $ENV_FILE"
 install -d -m 755 "/etc/$APP"
@@ -151,6 +152,7 @@ Environment=PORT=$PORT
 # Loopback only — nginx is the only thing that should reach this port.
 Environment=HOST=127.0.0.1
 Environment=DB_PATH=$DATA_DIR/plants.db
+Environment=UPLOADS_DIR=$DATA_DIR/uploads
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=3
@@ -229,10 +231,18 @@ if [ ! -d "\$REPO_DIR/.git" ]; then
   git clone --quiet $BACKUP_REPO "\$REPO_DIR" || { git init -q -b main "\$REPO_DIR"; git -C "\$REPO_DIR" remote add origin $BACKUP_REPO; }
 fi
 cp "$DATA_DIR/backups/plants-\$(date +%F).db" "\$REPO_DIR/plants.db"
+# Photos live on disk, so the DB alone is not a complete restore. Rebuilt from
+# scratch each run so deleted photos drop out of the working tree too; git
+# still sees no diff for unchanged files. The .gitkeep keeps the "git add
+# uploads" pathspec valid when there are no photos yet.
+rm -rf "\$REPO_DIR/uploads"
+mkdir -p "\$REPO_DIR/uploads"
+touch "\$REPO_DIR/uploads/.gitkeep"
+cp -a $DATA_DIR/uploads/. "\$REPO_DIR/uploads/" 2>/dev/null || true
 cd "\$REPO_DIR"
 git config user.name "planta-notify backup"
 git config user.email "noreply@auth.offhourslab.com"
-git add plants.db
+git add plants.db uploads
 git diff --cached --quiet || git commit -q -m "backup \$(date -u +%FT%TZ)"
 git push -q origin main
 EOF
@@ -273,8 +283,9 @@ server {
     listen [::]:80;
     server_name $DOMAIN;
 
-    # Bodies are small JSON (subscriptions, plant edits).
-    client_max_body_size 64k;
+    # Mostly small JSON (subscriptions, plant edits); plant photos are the
+    # outlier, and the app caps those at 5MB itself.
+    client_max_body_size 6m;
 
     location / {
         proxy_pass http://127.0.0.1:$PORT;
@@ -334,6 +345,7 @@ cat <<EOF
   Port:     127.0.0.1:$PORT (not internet-reachable)
   Code:     $APP_DIR (owned by $DEPLOY_USER, read by $APP)
   Data:     $DATA_DIR/plants.db (backups nightly in $DATA_DIR/backups)
+  Photos:   $DATA_DIR/uploads
   Secrets:  $ENV_FILE
 
   Login codes are printed to the journal (no email in v1):

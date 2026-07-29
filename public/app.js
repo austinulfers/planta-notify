@@ -32,6 +32,47 @@
     return data;
   }
 
+  // --- photos ----------------------------------------------------------------
+
+  const PHOTO_MAX_DIM = 1600;
+
+  /* Downscale in the browser: phone photos are 5–10MB, which the server caps
+   * and the phone's connection would rather not upload. Also normalises EXIF
+   * rotation, which <img> respects but canvas would otherwise drop. */
+  async function resizeImage(file) {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, PHOTO_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.85)
+    );
+    if (!blob) throw new Error('could not process that image');
+    return blob;
+  }
+
+  // Raw bytes, so this bypasses the JSON-only api() helper.
+  async function uploadPhoto(id, file) {
+    const blob = await resizeImage(file);
+    const res = await fetch(`/api/plants/${id}/photo`, {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type },
+      body: blob,
+    });
+    if (res.status === 401) {
+      renderLogin();
+      throw new Error('signed out');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+    return data;
+  }
+
+  const photoUrl = (p) => `/api/plants/${p.id}/photo?v=${encodeURIComponent(p.photo)}`;
+
   let toastTimer;
   function toast(msg, isError = false) {
     document.querySelector('.toast')?.remove();
@@ -266,7 +307,7 @@
     for (const p of plants) {
       const card = h(`
         <div class="card search-result" data-id="${p.id}">
-          ${p.thumbnail ? `<img class="thumb" src="${esc(p.thumbnail)}" alt="" />` : `<div class="thumb">🪴</div>`}
+          ${p.photo ? `<img class="thumb" src="${esc(photoUrl(p))}" alt="" />` : `<div class="thumb">🪴</div>`}
           <div class="info">
             <div class="name">${esc(p.nickname)}</div>
             <div class="meta">💧 ${dueLabel(p.next_water_due)}${p.next_feed_due ? ` · 🌱 ${dueLabel(p.next_feed_due)}` : ''}${p.location ? ` · ${esc(p.location)}` : ''}</div>
@@ -290,10 +331,15 @@
     const frag = h(`
       <button class="backlink" id="back">← All plants</button>
       <div class="detail-header">
-        <div class="thumb">🪴</div>
+        ${p.photo ? `<img class="thumb" id="photo" src="${esc(photoUrl(p))}" alt="${esc(p.nickname)}" />` : `<div class="thumb">🪴</div>`}
         <div>
           <h1 style="margin:0">${esc(p.nickname)}</h1>
           <p class="sub" style="margin:0">${p.location ? esc(p.location) : ''}</p>
+          <div class="photo-actions">
+            <input type="file" id="photofile" accept="image/*" hidden />
+            <button class="ghost small" id="photobtn">${p.photo ? 'Change photo' : '📷 Add photo'}</button>
+            ${p.photo ? '<button class="ghost small" id="photodel">Remove</button>' : ''}
+          </div>
         </div>
       </div>
       <div class="row">
@@ -317,6 +363,33 @@
     `);
 
     frag.querySelector('#back').onclick = () => renderCollection();
+
+    const fileInput = frag.querySelector('#photofile');
+    const photoBtn = frag.querySelector('#photobtn');
+    photoBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      photoBtn.disabled = true;
+      photoBtn.textContent = 'Uploading…';
+      try {
+        await uploadPhoto(id, file);
+        toast('Photo saved');
+        renderDetail(id);
+      } catch (err) {
+        if (err.message === 'signed out') return;
+        toast(err.message, true);
+        photoBtn.disabled = false;
+        photoBtn.textContent = p.photo ? 'Change photo' : '📷 Add photo';
+      }
+    };
+    frag.querySelector('#photodel')?.addEventListener('click', async () => {
+      const out = await api('DELETE', `/api/plants/${id}/photo`);
+      if (!out.ok) return toast(out.error, true);
+      toast('Photo removed');
+      renderDetail(id);
+    });
+
     frag.querySelector('#water').onclick = async () => {
       await api('POST', `/api/plants/${id}/care`, { kind: 'water' });
       toast('Watered');

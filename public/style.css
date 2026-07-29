@@ -171,6 +171,7 @@ label { color: var(--muted); font-size: 0.9rem; }
 
 .detail-header { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
 .detail-header .thumb { width: 64px; height: 64px; font-size: 1.8rem; }
+.photo-actions { display: flex; gap: 6px; margin-top: 6px; }
 
 .kv { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--card-2); font-size: 0.95rem; }
 .kv .k { color: var(--muted); }

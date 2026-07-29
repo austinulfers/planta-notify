@@ -8,6 +8,15 @@ import { saveSubscription, pushToUser, vapidPublicKey } from './push.js';
 import { searchSpecies, getSpeciesDetails } from './perenual.js';
 import { nextWaterDue, nextFeedDue, waterDue, fertilizerDue } from './care.js';
 import { startScheduler, runDigestTick } from './scheduler.js';
+import {
+  MAX_PHOTO_BYTES,
+  detectImageType,
+  savePhoto,
+  deletePhoto,
+  photoPath,
+  mimeForPhoto,
+  storageReady,
+} from './photos.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -55,6 +64,35 @@ function readBody(req) {
         reject(Object.assign(new Error('invalid JSON'), { status: 400 }));
       }
     });
+    req.on('error', reject);
+  });
+}
+
+/* Photos need a far larger ceiling than JSON payloads, so they get their own
+ * reader instead of raising MAX_BODY for every route. */
+function readRawBody(req, max) {
+  const tooLarge = () => Object.assign(new Error('Image is too large.'), { status: 413 });
+
+  // Reject before reading a byte when the client declares an oversized body,
+  // so the caller can still send a readable error instead of a dead socket.
+  const declared = Number(req.headers['content-length']);
+  if (Number.isFinite(declared) && declared > max) return Promise.reject(tooLarge());
+
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) {
+        // Backstop for chunked or mis-declared bodies. Pause rather than
+        // destroy so the 413 response can still be written.
+        req.pause();
+        reject(tooLarge());
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -238,6 +276,48 @@ async function handleApi(req, res, url) {
       logCare(plant.id, kind, now(), body.note);
       const updated = db.prepare('SELECT * FROM plants WHERE id = ?').get(plant.id);
       return json(res, 200, { ok: true, plant: plantWithDue(updated) });
+    }
+  }
+
+  const photoMatch = url.pathname.match(/^\/api\/plants\/(\d+)\/photo$/);
+  if (photoMatch) {
+    const plant = getPlantOwned(user, photoMatch[1]);
+    if (!plant) return json(res, 404, { ok: false, error: 'Plant not found.' });
+
+    if (req.method === 'GET') {
+      const abs = plant.photo && photoPath(plant.photo);
+      if (!abs || !fs.existsSync(abs)) return json(res, 404, { ok: false, error: 'No photo.' });
+      // Private: photos are per-user, so no shared cache may keep a copy.
+      // Each upload gets a new filename, which is what busts the cache.
+      res.writeHead(200, {
+        'Content-Type': mimeForPhoto(plant.photo),
+        'Cache-Control': 'private, max-age=604800',
+      });
+      return fs.createReadStream(abs).pipe(res);
+    }
+
+    if (req.method === 'POST') {
+      if (!storageReady)
+        return json(res, 503, { ok: false, error: 'Photo storage is unavailable.' });
+      const buf = await readRawBody(req, MAX_PHOTO_BYTES);
+      if (buf.length === 0) return json(res, 400, { ok: false, error: 'No image data.' });
+      const type = detectImageType(buf);
+      if (!type)
+        return json(res, 415, { ok: false, error: 'Only JPEG, PNG, and WebP images are supported.' });
+
+      const filename = savePhoto(plant.id, buf, type.ext);
+      const previous = plant.photo;
+      db.prepare('UPDATE plants SET photo = ? WHERE id = ?').run(filename, plant.id);
+      if (previous && previous !== filename) deletePhoto(previous);
+      return json(res, 200, { ok: true, photo: filename });
+    }
+
+    if (req.method === 'DELETE') {
+      if (plant.photo) {
+        db.prepare('UPDATE plants SET photo = NULL WHERE id = ?').run(plant.id);
+        deletePhoto(plant.photo);
+      }
+      return json(res, 200, { ok: true });
     }
   }
 

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS plants (
   fertilize_interval_days INTEGER,                 -- NULL = never fertilize
   last_watered            INTEGER,                 -- unix seconds
   last_fertilized         INTEGER,
+  photo                   TEXT,                    -- uploaded photo filename, relative to UPLOADS_DIR
   archived_at             INTEGER,                 -- soft delete
   created_at              INTEGER NOT NULL
 );
@@ -71,6 +72,17 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_plants_user ON plants(user_id) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_events_plant ON care_events(plant_id, occurred_at DESC);
 `);
+
+// Migrations. CREATE TABLE IF NOT EXISTS leaves existing tables alone, so
+// columns added after a deploy need an explicit guarded ALTER TABLE.
+function addColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`Migrated: ${table}.${column} added`);
+  }
+}
+addColumn('plants', 'photo', 'TEXT');
 
 // Seed the first user so login works before any signup flow exists.
 const seedEmail = process.env.SEED_EMAIL;
