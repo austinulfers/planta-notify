@@ -337,8 +337,8 @@
           <p class="sub" style="margin:0">${p.location ? esc(p.location) : ''}</p>
           <div class="photo-actions">
             <input type="file" id="photofile" accept="image/*" hidden />
-            <button class="ghost small" id="photobtn">${p.photo ? 'Change photo' : '📷 Add photo'}</button>
-            ${p.photo ? '<button class="ghost small" id="photodel">Remove</button>' : ''}
+            <button class="ghost small" id="photobtn">${p.photo ? 'Change photo' : 'Add photo'}</button>
+            ${p.photo ? '<button class="danger small" id="photodel">Remove</button>' : ''}
           </div>
         </div>
       </div>
@@ -380,10 +380,11 @@
         if (err.message === 'signed out') return;
         toast(err.message, true);
         photoBtn.disabled = false;
-        photoBtn.textContent = p.photo ? 'Change photo' : '📷 Add photo';
+        photoBtn.textContent = p.photo ? 'Change photo' : 'Add photo';
       }
     };
     frag.querySelector('#photodel')?.addEventListener('click', async () => {
+      if (!confirm('Remove this photo?')) return;
       const out = await api('DELETE', `/api/plants/${id}/photo`);
       if (!out.ok) return toast(out.error, true);
       toast('Photo removed');
